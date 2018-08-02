@@ -11,25 +11,30 @@ const bodyParser = require("body-parser");
 const ui = _.template(fs.readFileSync("./input.html").toString());
 
 const app = express();
-app.use(morgan(":method :url :status Authorization: :req[authorization] Debug info: :res[x-debug] Redirect: :res[location]"));
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(morgan(
+    ":method :url :status Authorization: :req[authorization] Debug info: :res[x-debug] Redirect: :res[location]"));
+app.use(bodyParser.urlencoded({extended : false}));
 
 const EXPECTED_CLIENT_ID = process.env.EXPECTED_CLIENT_ID || "dummy-client-id";
-const EXPECTED_CLIENT_SECRET = process.env.EXPECTED_CLIENT_SECRET || "dummy-client-secret";
+const EXPECTED_CLIENT_SECRET =
+    process.env.EXPECTED_CLIENT_SECRET || "dummy-client-secret";
 const AUTH_REQUEST_PATH = process.env.AUTH_REQUEST_PATH || "/o/oauth2/v2/auth";
-const ACCESS_TOKEN_REQUEST_PATH = process.env.ACCESS_TOKEN_REQUEST_PATH || "/oauth2/v4/token";
-const USERINFO_REQUEST_URL = process.env.TOKENINFO_REQUEST_URL || "/oauth2/v3/userinfo";
-const TOKENINFO_REQUEST_URL = process.env.TOKENINFO_REQUEST_URL || "/oauth2/v3/tokeninfo";
-const PERMITTED_REDIRECT_URLS = process.env.PERMITTED_REDIRECT_URLS ? process.env.PERMITTED_REDIRECT_URLS.split(",") : ["http://localhost:8181/auth/login"];
+const ACCESS_TOKEN_REQUEST_PATH =
+    process.env.ACCESS_TOKEN_REQUEST_PATH || "/oauth2/v4/token";
+const USERINFO_REQUEST_URL =
+    process.env.TOKENINFO_REQUEST_URL || "/oauth2/v3/userinfo";
+const TOKENINFO_REQUEST_URL =
+    process.env.TOKENINFO_REQUEST_URL || "/oauth2/v3/tokeninfo";
+const PERMITTED_REDIRECT_URLS =
+    process.env.PERMITTED_REDIRECT_URLS
+        ? process.env.PERMITTED_REDIRECT_URLS.split(",")
+        : [ "http://localhost:8181/auth/login" ];
 
 const code2token = {};
 const authHeader2personData = {};
 const id_token2personData = {};
 
-
-function now() {
-  return Math.round(new Date().valueOf() / 1000);
-}
+function now() { return Math.round(new Date().valueOf() / 1000); }
 
 function errorMsg(descr, expected, actual) {
   return "expected " + descr + ": " + expected + ", actual: " + actual;
@@ -39,15 +44,16 @@ function validateClientId(actualClientId, res) {
   if (actualClientId === EXPECTED_CLIENT_ID) {
     return true;
   }
-  res.writeHead(400, {
-    "X-Debug": errorMsg("client_id", EXPECTED_CLIENT_ID, actualClientId)
-  });
+  res.writeHead(
+      400,
+      {"X-Debug" : errorMsg("client_id", EXPECTED_CLIENT_ID, actualClientId)});
   res.end();
   return false;
 }
 
 function permittedRedirectURLs() {
-    return _.reduce(PERMITTED_REDIRECT_URLS, (a, b) => a === "" ? b : a + ", " + b, "" );
+  return _.reduce(PERMITTED_REDIRECT_URLS,
+                  (a, b) => a === "" ? b : a + ", " + b, "");
 }
 
 function validateAuthRequest(req, res) {
@@ -55,13 +61,16 @@ function validateAuthRequest(req, res) {
   if (validateClientId(actualClientId, res)) {
     if (req.query.response_type !== "code") {
       res.writeHead(401, {
-        "X-Debug": errorMsg("response_type", "code", req.query.response_type)
+        "X-Debug" : errorMsg("response_type", "code", req.query.response_type)
       });
       return false;
     }
-    if (req.query.redirect_uri && ! _.contains(PERMITTED_REDIRECT_URLS, req.query.redirect_uri)) {
+    if (req.query.redirect_uri &&
+        !_.contains(PERMITTED_REDIRECT_URLS, req.query.redirect_uri)) {
       res.writeHead(401, {
-        "X-Debug" : errorMsg("redirect_uri", "one of " + permittedRedirectURLs(), req.query.redirect_uri)
+        "X-Debug" :
+            errorMsg("redirect_uri", "one of " + permittedRedirectURLs(),
+                     req.query.redirect_uri)
       });
       return false;
     }
@@ -104,14 +113,16 @@ function validateAccessTokenRequest(req, res) {
   // }
   // if (!validateAuthorizationHeader(req.headers["authorization"])) {
   //   success = false;
-  //   msg = errorMsg("Authorization header", req.headers["authorization"], "Basic ZHVtbXktY2xpZW50LWlkOmR1bW15LWNsaWVudC1zZWNyZXQ=");
+  //   msg = errorMsg("Authorization header", req.headers["authorization"],
+  //   "Basic ZHVtbXktY2xpZW50LWlkOmR1bW15LWNsaWVudC1zZWNyZXQ=");
   // }
   if (!validateClientId(req.body.client_id, res)) {
     success = false;
   }
   if (req.body.client_secret !== EXPECTED_CLIENT_SECRET) {
     success = false;
-    msg = errorMsg("client_secret", EXPECTED_CLIENT_SECRET, req.body.client_secret);
+    msg = errorMsg("client_secret", EXPECTED_CLIENT_SECRET,
+                   req.body.client_secret);
   }
   if (req.session.redirect_uri !== req.body.redirect_uri) {
     success = false;
@@ -133,27 +144,30 @@ function createToken(name, email, expires_in, client_state) {
   const refreshtoken = "REFT-" + randomstring.generate(6);
   const id_token = "IDT-" + randomstring.generate(6);
   const token = {
-    access_token: accesstoken,
-    expires_in: expires_in,
-    refresh_token: refreshtoken,
-    id_token: id_token,
-    state: client_state,
-    token_type: "Bearer"
+    access_token : accesstoken,
+    expires_in : expires_in,
+    refresh_token : refreshtoken,
+    id_token : id_token,
+    state : client_state,
+    token_type : "Bearer"
   };
-  id_token2personData[id_token] = authHeader2personData["Bearer " + accesstoken] = {
-    email: email,
-    email_verified: true,
-    name: name
-  };
+  id_token2personData[id_token] =
+      authHeader2personData["Bearer " + accesstoken] =
+          {email : email, email_verified : true, name : name};
   code2token[code] = token;
+  refresh2personData[refreshtoken] = {
+    name : name,
+    email : email,
+    expires_in : expires_in
+  };
   return code;
 }
 
 app.use(session({
-  secret: "keyboard cat",
-  resave: false,
-  saveUninitialized: true,
-  cookie: {secure: false}
+  secret : "keyboard cat",
+  resave : false,
+  saveUninitialized : true,
+  cookie : {secure : false}
 }))
 
 function authRequestHandler(req, res) {
@@ -162,11 +176,8 @@ function authRequestHandler(req, res) {
     if (req.query.state) {
       req.session.client_state = req.query.state;
     }
-    res.send(ui({
-      query: req.query
-    }));
+    res.send(ui({query : req.query}));
   } else {
-
   }
   res.end();
 }
@@ -174,12 +185,13 @@ function authRequestHandler(req, res) {
 app.get(AUTH_REQUEST_PATH, authRequestHandler);
 
 app.get("/login-as", (req, res) => {
-  const code = createToken(req.query.name, req.query.email, req.query.expires_in, req.session.client_state);
+  const code = createToken(req.query.name, req.query.email,
+                           req.query.expires_in, req.session.client_state);
   var location = req.session.redirect_uri + "?code=" + code;
   if (req.session.client_state) {
     location += "&state=" + req.session.client_state;
   }
-  res.writeHead(307, {"Location": location});
+  res.writeHead(307, {"Location" : location});
   res.end();
 });
 
@@ -208,8 +220,8 @@ app.get(USERINFO_REQUEST_URL, (req, res) => {
 
 app.get(TOKENINFO_REQUEST_URL, (req, res) => {
   if (req.query.id_token == null) {
-      res.status(400)
-      res.send("missing id_token query parameter");
+    res.status(400)
+    res.send("missing id_token query parameter");
   }
   const token_info = id_token2personData[req.query.id_token];
   if (token_info !== undefined) {
@@ -222,18 +234,17 @@ app.get(TOKENINFO_REQUEST_URL, (req, res) => {
   res.end();
 });
 
-
 module.exports = {
-  app: app,
-  validateClientId: validateClientId,
-  validateAccessTokenRequest: validateAccessTokenRequest,
-  validateAuthorizationHeader: validateAuthorizationHeader,
-  validateAuthRequest: validateAuthRequest,
-  authRequestHandler: authRequestHandler,
-  EXPECTED_CLIENT_ID: EXPECTED_CLIENT_ID,
-  EXPECTED_CLIENT_SECRET: EXPECTED_CLIENT_SECRET,
+  app : app,
+  validateClientId : validateClientId,
+  validateAccessTokenRequest : validateAccessTokenRequest,
+  validateAuthorizationHeader : validateAuthorizationHeader,
+  validateAuthRequest : validateAuthRequest,
+  authRequestHandler : authRequestHandler,
+  EXPECTED_CLIENT_ID : EXPECTED_CLIENT_ID,
+  EXPECTED_CLIENT_SECRET : EXPECTED_CLIENT_SECRET,
   AUTH_REQUEST_PATH : AUTH_REQUEST_PATH,
   ACCESS_TOKEN_REQUEST_PATH : ACCESS_TOKEN_REQUEST_PATH,
   PERMITTED_REDIRECT_URLS : PERMITTED_REDIRECT_URLS,
-  permittedRedirectURLs: permittedRedirectURLs
+  permittedRedirectURLs : permittedRedirectURLs
 };

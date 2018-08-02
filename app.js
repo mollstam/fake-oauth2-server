@@ -31,6 +31,7 @@ const PERMITTED_REDIRECT_URLS =
         : [ "http://localhost:8181/auth/login" ];
 
 const code2token = {};
+const refresh2personData = {};
 const authHeader2personData = {};
 const id_token2personData = {};
 
@@ -104,9 +105,18 @@ function validateAuthorizationHeader(header, res) {
 
 function validateAccessTokenRequest(req, res) {
   let success = true, msg;
-  if (req.body.grant_type !== "authorization_code") {
+  if (req.body.grant_type !== "authorization_code" &&
+      req.body.grant_type !== "refresh_token") {
     success = false;
-    msg = errorMsg("grant_type", "authorization_code", req.body.grant_type);
+    msg = errorMsg("grant_type", "authorization_code or refresh_token",
+                   req.body.grant_type);
+  }
+  if (req.body.grant_type === "refresh_token") {
+    let personData = refresh2personData[req.body.refresh_token];
+    if (personData === undefined) {
+      success = false;
+      msg = "bad refresh token";
+    }
   }
   // if (!validateClientId(req.query.client_id, res)) {
   //   success = false;
@@ -197,7 +207,17 @@ app.get("/login-as", (req, res) => {
 
 app.post(ACCESS_TOKEN_REQUEST_PATH, (req, res) => {
   if (validateAccessTokenRequest(req, res)) {
-    const code = req.body.code;
+    let code = null;
+    if (req.body.grant_type === "refresh_token") {
+      const refresh = req.body.refresh_token;
+      const personData = refresh2personData[refresh];
+      code = createToken(personData.name, personData.email,
+                         personData.expires_in, null);
+      // only allow refresh once
+      delete refresh2personData[refresh];
+    } else if (req.body.grant_type === "authorization_code") {
+      code = req.body.code;
+    }
     const token = code2token[code];
     if (token !== undefined) {
       console.log("access token response body: ", token);
